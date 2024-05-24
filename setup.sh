@@ -170,6 +170,10 @@ cleanup() {
     done
     echo "SSH known hosts cleared."
 
+    echo "Generating new SSH host keys..."
+    ssh-keygen -A
+    echo "New SSH host keys generated."
+
     echo "Resetting network configuration..."
     rm /etc/netplan/*.yaml
     echo "Network configuration reset."
