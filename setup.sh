@@ -549,6 +549,66 @@ view_log() {
     return_to_main_menu
 }
 
+# Function to perform cleanup
+cleanup() {
+    echo "Performing cleanup..."
+
+    run_command "cat /dev/null > ~/.bash_history && history -c" "Clearing bash history"
+    for user in $(ls /home); do
+        run_command "cat /dev/null > /home/$user/.bash_history && history -c" "Clearing bash history for $user"
+    done
+
+    run_command "find /var/log -type f -exec truncate -s 0 {} \;" "Clearing logs"
+    run_command "find /var/log -type f -name '*.gz' -delete" "Deleting gzipped logs"
+    run_command "find /var/log -type f -name '*.old' -delete" "Deleting old logs"
+
+    run_command "rm -rf /tmp/*" "Clearing temporary files in /tmp"
+    run_command "rm -rf /var/tmp/*" "Clearing temporary files in /var/tmp"
+
+    run_command "apt clean" "Clearing package cache"
+
+    run_command "rm -f /etc/ssh/ssh_host_*" "Removing SSH host keys"
+    run_command "ssh-keygen -A" "Generating new SSH host keys"
+
+    for user in $(ls /home); do
+        run_command "rm -rf /home/$user/.cache/*" "Clearing cache for $user"
+        run_command "rm -rf /home/$user/.config/*" "Clearing config for $user"
+        run_command "rm -rf /home/$user/.local/*" "Clearing local data for $user"
+    done
+
+    run_command "rm -f /etc/udev/rules.d/70-persistent-net.rules" "Removing persistent network interface names"
+
+    run_command "truncate -s 0 /etc/machine-id" "Cleaning machine ID"
+    run_command "rm /var/lib/dbus/machine-id" "Removing machine ID from /var/lib/dbus"
+    run_command "ln -s /etc/machine-id /var/lib/dbus/machine-id" "Linking machine ID"
+
+    run_command "echo '' > /etc/hostname" "Resetting hostname configuration"
+    run_command "sed -i '/127.0.1.1/d' /etc/hosts" "Removing hostname from /etc/hosts"
+
+    for user in $(ls /home); do
+        run_command "rm -f /home/$user/.ssh/known_hosts" "Clearing SSH known hosts for $user"
+    done
+
+    run_command "rm /etc/netplan/*.yaml" "Resetting network configuration"
+
+    run_command "apt autoremove -y" "Removing unneeded packages"
+
+    echo "Cleanup complete. Ready to turn the container into a template."
+
+    read -p "Do you want to shut down the container now? (y/n): " shutdown_confirm
+    case ${shutdown_confirm:0:1} in
+        y|Y )
+            echo "Shutting down the container..."
+            run_command "shutdown now" "Shutting down the container"
+        ;;
+        * )
+            echo "Container not shut down. You can now convert it to a template."
+        ;;
+    esac
+
+    return_to_main_menu
+}
+
 # Main menu
 main_menu() {
     clear
