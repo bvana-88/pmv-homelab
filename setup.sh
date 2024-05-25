@@ -441,14 +441,18 @@ check_docker_status() {
         docker_status="\e[31m✗\e[0m"
     fi
 
-    if docker ps | grep -q dockge; then
+    if command -v docker &> /dev/null && docker ps | grep -q dockge; then
         dockge_status="\e[32m✓\e[0m"
     else
         dockge_status="\e[31m✗\e[0m"
     fi
 
     echo -e "||  Docker running: $docker_status  ||  Dockge running: $dockge_status  ||"
-    echo -e "|| Users in Docker group: $(getent group docker | awk -F: '{print $4}' | tr ',' ' ') ||"
+    if command -v getent &> /dev/null; then
+        echo -e "|| Users in Docker group: $(getent group docker | awk -F: '{print $4}' | tr ',' ' ') ||"
+    else
+        echo -e "|| Users in Docker group: Unable to determine (getent not found) ||"
+    fi
 }
 
 # Function to view the log
@@ -533,7 +537,7 @@ docker_menu() {
     read -p "Enter your choice: " docker_choice
 
     case $docker_choice in
-         1)
+        1)
             install_docker
         ;;
         2)
