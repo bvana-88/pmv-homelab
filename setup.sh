@@ -1,7 +1,8 @@
 #!/bin/bash
 
 LOG_FILE="/var/log/setup-script.log"
-USER_CONFIG_FILE="/etc/ssh/sshd_config.d/00-userconfig.conf"
+USER_CONFIG_DIR="/etc/ssh/sshd_config.d"
+USER_CONFIG_PREFIX="userconfig.conf"
 
 # Function to check if the script is run as root
 check_root() {
@@ -22,7 +23,7 @@ log() {
     if [[ $status -eq 0 ]]; then
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} $message" | tee -a $LOG_FILE
     else
-        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${red_cross} $message" | tee -a $LOG_FILE
+        echo -e "$(date +'%Y-%m-%d %Y-%m-%d %H:%M:%S') - ${red_cross} $message" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - \e[31mError:\e[0m $status" | tee -a $LOG_FILE
     fi
 }
@@ -82,14 +83,33 @@ ensure_ssh_config_file() {
     fi
 }
 
+# Function to get the user config file path
+get_user_config_file() {
+    if [[ -f $USER_CONFIG_FILE ]]; then
+        echo "$USER_CONFIG_FILE"
+    else
+        local highest=0
+        for file in $USER_CONFIG_DIR/*; do
+            if [[ $file =~ $USER_CONFIG_DIR/([0-9]+)-.* ]]; then
+                number=${BASH_REMATCH[1]}
+                if (( number > highest )); then
+                    highest=$number
+                fi
+            fi
+        done
+        local next_number=$(printf "%02d" $((highest + 1)))
+        USER_CONFIG_FILE="$USER_CONFIG_DIR/${next_number}-${USER_CONFIG_PREFIX}"
+        echo "$USER_CONFIG_FILE"
+    fi
+}
+
 # Function to display current SSH settings
 display_ssh_settings() {
-    ensure_ssh_config_file
     local ssh_status root_login protocol_version password_login ssh_port
 
     if systemctl is-active --quiet ssh; then
         ssh_status="\e[32mEnabled\e[0m"
-        ssh_port=$(grep "^Port " $USER_CONFIG_FILE | awk '{print $2}')
+        ssh_port=$(grep "^Port " $USER_CONFIG_DIR/* 2>/dev/null | awk '{print $2}')
         ssh_port=${ssh_port:-22}
     else
         ssh_status="\e[31mDisabled\e[0m"
@@ -100,19 +120,19 @@ display_ssh_settings() {
     fi
 
     if [[ $ssh_status == *"Enabled"* ]]; then
-        if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
+        if grep -q "^PermitRootLogin yes" $USER_CONFIG_DIR/* 2>/dev/null; then
             root_login="\e[32mEnabled\e[0m"
         else
             root_login="\e[31mDisabled\e[0m"
         fi
 
-        if grep -q "^Protocol 2" $USER_CONFIG_FILE; then
+        if grep -q "^Protocol 2" $USER_CONFIG_DIR/* 2>/dev/null; then
             protocol_version="\e[32m2\e[0m"
         else
             protocol_version="\e[31mNot set\e[0m"
         fi
 
-        if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
+        if grep -q "^PasswordAuthentication yes" $USER_CONFIG_DIR/* 2>/dev/null; then
             password_login="\e[32mEnabled\e[0m"
         else
             password_login="\e[31mDisabled\e[0m"
@@ -148,6 +168,9 @@ ssh_menu() {
     echo "#                                            #"
     echo "##############################################"
     echo
+    if [[ ! -f $(get_user_config_file) ]]; then
+        echo -e "\e[31mConfig file not found, make a selection to create it.\e[0m"
+    fi
     display_ssh_settings
     echo
     echo "Select an option:"
@@ -209,7 +232,7 @@ ssh_menu() {
 
 # Function to view SSH config
 view_ssh_config() {
-    ensure_ssh_config_file
+    local user_config_file=$(get_user_config_file)
     clear
     echo "##############################################"
     echo "#                                            #"
@@ -217,9 +240,13 @@ view_ssh_config() {
     echo "#                                            #"
     echo "##############################################"
     echo
-    echo "Configuration file location: $USER_CONFIG_FILE"
-    echo
-    cat $USER_CONFIG_FILE
+    if [[ -f $user_config_file ]]; then
+        echo "Configuration file location: $user_config_file"
+        echo
+        cat $user_config_file
+    else
+        echo "No configuration file found."
+    fi
     echo
     return_to_ssh_menu
 }
@@ -227,10 +254,10 @@ view_ssh_config() {
 # Function to enable/disable SSH
 enable_disable_ssh() {
     if systemctl is-active --quiet ssh; then
-        run_command "systemctl stop ssh"
+        run_command "systemctl stop ssh && systemctl stop ssh.socket && systemctl disable ssh.socket"
         log "SSH disabled." 0
     else
-        run_command "systemctl start ssh"
+        run_command "systemctl start ssh && systemctl enable ssh.socket && systemctl start ssh.socket"
         log "SSH enabled." 0
     fi
     return_to_ssh_menu
@@ -238,14 +265,18 @@ enable_disable_ssh() {
 
 # Function to enable/disable root login
 enable_disable_root_login() {
-    ensure_ssh_config_file
-    if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
-        run_command "sed -i '/^PermitRootLogin /d' $USER_CONFIG_FILE"
-        echo "PermitRootLogin no" >> $USER_CONFIG_FILE
+    local user_config_file=$(get_user_config_file)
+    if [[ ! -f $user_config_file ]]; then
+        touch $user_config_file
+        log "Created SSH user configuration file: $user_config_file" 0
+    fi
+    if grep -q "^PermitRootLogin yes" $user_config_file; then
+        run_command "sed -i '/^PermitRootLogin /d' $user_config_file"
+        echo "PermitRootLogin no" >> $user_config_file
         log "Root login disabled." 0
     else
-        run_command "sed -i '/^PermitRootLogin /d' $USER_CONFIG_FILE"
-        echo "PermitRootLogin yes" >> $USER_CONFIG_FILE
+        run_command "sed -i '/^PermitRootLogin /d' $user_config_file"
+        echo "PermitRootLogin yes" >> $user_config_file
         log "Root login enabled." 0
     fi
     run_command "systemctl restart sshd"
@@ -254,10 +285,14 @@ enable_disable_root_login() {
 
 # Function to change SSH port
 change_ssh_port() {
-    ensure_ssh_config_file
+    local user_config_file=$(get_user_config_file)
+    if [[ ! -f $user_config_file ]]; then
+        touch $user_config_file
+        log "Created SSH user configuration file: $user_config_file" 0
+    fi
     read -p "Enter the new SSH port: " ssh_port
-    run_command "sed -i '/^Port /d' $USER_CONFIG_FILE"
-    echo "Port $ssh_port" >> $USER_CONFIG_FILE
+    run_command "sed -i '/^Port /d' $user_config_file"
+    echo "Port $ssh_port" >> $user_config_file
     log "SSH port set to $ssh_port." 0
     run_command "systemctl restart sshd"
     return_to_ssh_menu
@@ -265,9 +300,13 @@ change_ssh_port() {
 
 # Function to set SSH protocol
 set_ssh_protocol() {
-    ensure_ssh_config_file
-    run_command "sed -i '/^Protocol /d' $USER_CONFIG_FILE"
-    echo "Protocol 2" >> $USER_CONFIG_FILE
+    local user_config_file=$(get_user_config_file)
+    if [[ ! -f $user_config_file ]]; then
+        touch $user_config_file
+        log "Created SSH user configuration file: $user_config_file" 0
+    fi
+    run_command "sed -i '/^Protocol /d' $user_config_file"
+    echo "Protocol 2" >> $user_config_file
     log "SSH protocol set to 2." 0
     run_command "systemctl restart sshd"
     return_to_ssh_menu
@@ -275,15 +314,19 @@ set_ssh_protocol() {
 
 # Function to enable/disable password login
 enable_disable_password_login() {
-    ensure_ssh_config_file
-    if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
-        run_command "sed -i '/^PasswordAuthentication /d' $USER_CONFIG_FILE"
-        echo "PasswordAuthentication no" >> $USER_CONFIG_FILE
-        echo "PubkeyAuthentication yes" >> $USER_CONFIG_FILE
+    local user_config_file=$(get_user_config_file)
+    if [[ ! -f $user_config_file ]]; then
+        touch $user_config_file
+        log "Created SSH user configuration file: $user_config_file" 0
+    fi
+    if grep -q "^PasswordAuthentication yes" $user_config_file; then
+        run_command "sed -i '/^PasswordAuthentication /d' $user_config_file"
+        echo "PasswordAuthentication no" >> $user_config_file
+        echo "PubkeyAuthentication yes" >> $user_config_file
         log "Password login disabled." 0
     else
-        run_command "sed -i '/^PasswordAuthentication /d' $USER_CONFIG_FILE"
-        echo "PasswordAuthentication yes" >> $USER_CONFIG_FILE
+        run_command "sed -i '/^PasswordAuthentication /d' $user_config_file"
+        echo "PasswordAuthentication yes" >> $user_config_file
         log "Password login enabled." 0
     fi
     run_command "systemctl restart sshd"
