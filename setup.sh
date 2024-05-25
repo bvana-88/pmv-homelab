@@ -272,12 +272,12 @@ enable_disable_root_login() {
     fi
     if grep -q "^PermitRootLogin yes" $user_config_file; then
         run_command "sed -i '/^PermitRootLogin /d' $user_config_file" "Disabling root login"
-        echo "PermitRootLogin no" >> $user_config_file
         log "PermitRootLogin no" 0 "Root login disabled"
+        echo "PermitRootLogin no" >> $user_config_file
     else
         run_command "sed -i '/^PermitRootLogin /d' $user_config_file" "Enabling root login"
-        echo "PermitRootLogin yes" >> $user_config_file
         log "PermitRootLogin yes" 0 "Root login enabled"
+        echo "PermitRootLogin yes" >> $user_config_file
     fi
     run_command "systemctl restart sshd" "Restarting SSH service"
     return_to_ssh_menu
@@ -292,8 +292,8 @@ change_ssh_port() {
     fi
     read -p "Enter the new SSH port: " ssh_port
     run_command "sed -i '/^Port /d' $user_config_file" "Changing SSH port"
-    echo "Port $ssh_port" >> $user_config_file
     log "Port $ssh_port" 0 "SSH port set to $ssh_port"
+    echo "Port $ssh_port" >> $user_config_file
     run_command "systemctl restart sshd" "Restarting SSH service"
     return_to_ssh_menu
 }
@@ -306,8 +306,8 @@ set_ssh_protocol() {
         log "touch $user_config_file" "" "Creating SSH user configuration file"
     fi
     run_command "sed -i '/^Protocol /d' $user_config_file" "Setting SSH protocol"
-    echo "Protocol 2" >> $user_config_file
     log "Protocol 2" 0 "SSH protocol set to 2"
+    echo "Protocol 2" >> $user_config_file
     run_command "systemctl restart sshd" "Restarting SSH service"
     return_to_ssh_menu
 }
@@ -321,13 +321,13 @@ enable_disable_password_login() {
     fi
     if grep -q "^PasswordAuthentication yes" $user_config_file; then
         run_command "sed -i '/^PasswordAuthentication /d' $user_config_file" "Disabling password login"
+        log "PasswordAuthentication no, PubkeyAuthentication yes" 0 "Password login disabled"
         echo "PasswordAuthentication no" >> $user_config_file
         echo "PubkeyAuthentication yes" >> $user_config_file
-        log "PasswordAuthentication no, PubkeyAuthentication yes" 0 "Password login disabled"
     else
         run_command "sed -i '/^PasswordAuthentication /d' $user_config_file" "Enabling password login"
-        echo "PasswordAuthentication yes" >> $user_config_file
         log "PasswordAuthentication yes" 0 "Password login enabled"
+        echo "PasswordAuthentication yes" >> $user_config_file
     fi
     run_command "systemctl restart sshd" "Restarting SSH service"
     return_to_ssh_menu
