@@ -1,6 +1,7 @@
 #!/bin/bash
 
 LOG_FILE="/var/log/setup-script.log"
+USER_CONFIG_FILE="/etc/ssh/sshd_config.d/00-userconfig.conf"
 
 # Function to check if the script is run as root
 check_root() {
@@ -55,8 +56,17 @@ update_system() {
     return_to_ssh_menu
 }
 
+# Function to ensure SSH config file exists
+ensure_ssh_config_file() {
+    if [[ ! -f $USER_CONFIG_FILE ]]; then
+        touch $USER_CONFIG_FILE
+        log "Created SSH user configuration file: $USER_CONFIG_FILE"
+    fi
+}
+
 # Function to display current SSH settings
 display_ssh_settings() {
+    ensure_ssh_config_file
     local ssh_status root_login protocol_version password_login
 
     if systemctl is-active --quiet ssh; then
@@ -65,19 +75,19 @@ display_ssh_settings() {
         ssh_status="\e[31mDisabled\e[0m"
     fi
 
-    if grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+    if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
         root_login="\e[32mEnabled\e[0m"
     else
         root_login="\e[31mDisabled\e[0m"
     fi
 
-    if grep -q "^Protocol 2" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+    if grep -q "^Protocol 2" $USER_CONFIG_FILE; then
         protocol_version="\e[32m2\e[0m"
     else
         protocol_version="\e[31mNot set\e[0m"
     fi
 
-    if grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+    if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
         password_login="\e[32mEnabled\e[0m"
     else
         password_login="\e[31mDisabled\e[0m"
@@ -187,13 +197,14 @@ enable_disable_ssh() {
 
 # Function to enable/disable root login
 enable_disable_root_login() {
-    if grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
-        sed -i "/^PermitRootLogin /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-        echo "PermitRootLogin no" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+    ensure_ssh_config_file
+    if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
+        sed -i "/^PermitRootLogin /d" $USER_CONFIG_FILE
+        echo "PermitRootLogin no" >> $USER_CONFIG_FILE
         log "Root login disabled."
     else
-        sed -i "/^PermitRootLogin /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-        echo "PermitRootLogin yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        sed -i "/^PermitRootLogin /d" $USER_CONFIG_FILE
+        echo "PermitRootLogin yes" >> $USER_CONFIG_FILE
         log "Root login enabled."
     fi
     systemctl restart sshd
@@ -202,9 +213,10 @@ enable_disable_root_login() {
 
 # Function to change SSH port
 change_ssh_port() {
+    ensure_ssh_config_file
     read -p "Enter the new SSH port: " ssh_port
-    sed -i "/^Port /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-    echo "Port $ssh_port" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+    sed -i "/^Port /d" $USER_CONFIG_FILE
+    echo "Port $ssh_port" >> $USER_CONFIG_FILE
     log "SSH port set to $ssh_port."
     systemctl restart sshd
     return_to_ssh_menu
@@ -212,8 +224,9 @@ change_ssh_port() {
 
 # Function to set SSH protocol
 set_ssh_protocol() {
-    sed -i "/^Protocol /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-    echo "Protocol 2" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+    ensure_ssh_config_file
+    sed -i "/^Protocol /d" $USER_CONFIG_FILE
+    echo "Protocol 2" >> $USER_CONFIG_FILE
     log "SSH protocol set to 2."
     systemctl restart sshd
     return_to_ssh_menu
@@ -221,14 +234,15 @@ set_ssh_protocol() {
 
 # Function to enable/disable password login
 enable_disable_password_login() {
-    if grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
-        sed -i "/^PasswordAuthentication /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-        echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/00-userconfig.conf
-        echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+    ensure_ssh_config_file
+    if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
+        sed -i "/^PasswordAuthentication /d" $USER_CONFIG_FILE
+        echo "PasswordAuthentication no" >> $USER_CONFIG_FILE
+        echo "PubkeyAuthentication yes" >> $USER_CONFIG_FILE
         log "Password login disabled."
     else
-        sed -i "/^PasswordAuthentication /d" /etc/ssh/sshd_config.d/00-userconfig.conf
-        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        sed -i "/^PasswordAuthentication /d" $USER_CONFIG_FILE
+        echo "PasswordAuthentication yes" >> $USER_CONFIG_FILE
         log "Password login enabled."
     fi
     systemctl restart sshd
@@ -519,7 +533,7 @@ docker_menu() {
     read -p "Enter your choice: " docker_choice
 
     case $docker_choice in
-        1)
+         1)
             install_docker
         ;;
         2)
