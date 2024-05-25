@@ -597,6 +597,16 @@ cleanup() {
 
     run_command "apt autoremove -y" "Removing unneeded packages"
 
+    # Prompt for keeping public keys
+    read -p "Do you want to keep the public keys for users? (y/n): " keep_keys_confirm
+    if [[ "${keep_keys_confirm:0:1}" =~ ^[Yy]$ ]]; then
+        log "Keeping public keys for users" 0 "Public keys retention"
+    else
+        for user in $(ls /home); do
+            run_command "rm -rf /home/$user/.ssh/authorized_keys" "Removing public keys for $user"
+        done
+    fi
+
     echo "Cleanup complete. Ready to turn the container into a template."
 
     read -p "Do you want to shut down the container now? (y/n): " shutdown_confirm
