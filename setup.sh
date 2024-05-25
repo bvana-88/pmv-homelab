@@ -1,5 +1,7 @@
 #!/bin/bash
 
+LOG_FILE="/var/log/setup-script.log"
+
 # Function to check if the script is run as root
 check_root() {
     if [[ $EUID -ne 0 ]]; then
@@ -10,7 +12,7 @@ check_root() {
 
 # Function to log messages
 log() {
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $1"
+    echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a $LOG_FILE
 }
 
 # Function to return to the main menu
@@ -29,10 +31,10 @@ return_to_docker_menu() {
     docker_menu
 }
 
-# Function to perform initial setup
-initial_setup() {
-    log "Initial Setup"
-    echo "Initial Setup"
+# Function to perform SSH & User setup
+ssh_user_setup() {
+    log "SSH & User Setup"
+    echo "SSH & User Setup"
 
     read -p "Do you want to update the system? (y/n): " update_confirm
     if [[ "${update_confirm:0:1}" =~ ^[Yy]$ ]]; then
@@ -221,6 +223,19 @@ check_docker_status() {
     echo -e "|| Users in Docker group: $(getent group docker | awk -F: '{print $4}' | tr ',' ' ') ||"
 }
 
+# Function to view the log
+view_log() {
+    clear
+    echo "##############################################"
+    echo "#                                            #"
+    echo "#                View Log                    #"
+    echo "#                                            #"
+    echo "##############################################"
+    echo
+    tail -n 100  $LOG_FILE
+    return_to_main_menu
+}
+
 # Main menu
 main_menu() {
     clear
@@ -231,9 +246,10 @@ main_menu() {
     echo "##############################################"
     echo
     echo "Select an option:"
-    echo "1) Initial setup"
+    echo "1) SSH & User setup"
     echo "2) Docker"
     echo "3) Cleanup to prepare for turning into a template"
+    echo "L) View log"
     echo "x) Exit"
     read -p "Enter your choice: " choice
 
@@ -241,13 +257,16 @@ main_menu() {
 
     case $choice in
         1)
-            initial_setup
+            ssh_user_setup
         ;;
         2)
             docker_menu
         ;;
         3)
             cleanup
+        ;;
+        L|l)
+            view_log
         ;;
         x)
             log "Exiting script."
