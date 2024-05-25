@@ -19,11 +19,12 @@ log() {
     local color_reset="\e[0m"
     local green_tick="\e[32m✓\e[0m"
     local red_cross="\e[31m✗\e[0m"
+    local sand_color="\e[38;5;222m"
 
     if [[ $status -eq 0 ]]; then
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} $message" | tee -a $LOG_FILE
     else
-        echo -e "$(date +'%Y-%m-%d %Y-%m-%d %H:%M:%S') - ${red_cross} $message" | tee -a $LOG_FILE
+        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${red_cross} $message" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - \e[31mError:\e[0m $status" | tee -a $LOG_FILE
     fi
 }
@@ -31,6 +32,9 @@ log() {
 # Function to run commands and log their status
 run_command() {
     local command="$1"
+    local sand_color="\e[38;5;222m"
+    local color_reset="\e[0m"
+    echo -e "${sand_color}    $command${color_reset}" | tee -a $LOG_FILE
     eval $command
     local status=$?
     log "$command" $status
@@ -75,18 +79,11 @@ update_system() {
     return_to_main_menu
 }
 
-# Function to ensure SSH config file exists
-ensure_ssh_config_file() {
-    if [[ ! -f $USER_CONFIG_FILE ]]; then
-        run_command "touch $USER_CONFIG_FILE"
-        log "Created SSH user configuration file: $USER_CONFIG_FILE" 0
-    fi
-}
-
 # Function to get the user config file path
 get_user_config_file() {
-    if [[ -f $USER_CONFIG_FILE ]]; then
-        echo "$USER_CONFIG_FILE"
+    local existing_files=($USER_CONFIG_DIR/*-userconfig.conf)
+    if [[ ${#existing_files[@]} -gt 0 ]]; then
+        echo "${existing_files[0]}"
     else
         local highest=0
         for file in $USER_CONFIG_DIR/*; do
@@ -98,14 +95,14 @@ get_user_config_file() {
             fi
         done
         local next_number=$(printf "%02d" $((highest + 1)))
-        USER_CONFIG_FILE="$USER_CONFIG_DIR/${next_number}-${USER_CONFIG_PREFIX}"
-        echo "$USER_CONFIG_FILE"
+        echo "$USER_CONFIG_DIR/${next_number}-${USER_CONFIG_PREFIX}"
     fi
 }
 
 # Function to display current SSH settings
 display_ssh_settings() {
     local ssh_status root_login protocol_version password_login ssh_port
+    local user_config_file=$(get_user_config_file)
 
     if systemctl is-active --quiet ssh; then
         ssh_status="\e[32mEnabled\e[0m"
@@ -168,7 +165,8 @@ ssh_menu() {
     echo "#                                            #"
     echo "##############################################"
     echo
-    if [[ ! -f $(get_user_config_file) ]]; then
+    local user_config_file=$(get_user_config_file)
+    if [[ ! -f $user_config_file ]]; then
         echo -e "\e[31mConfig file not found, make a selection to create it.\e[0m"
     fi
     display_ssh_settings
