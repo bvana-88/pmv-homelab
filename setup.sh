@@ -24,13 +24,12 @@ log() {
     local sand_color="\e[38;5;222m"
     local cyan_color="\e[36m"
 
-    if [[ $status -eq 0 ]]; then
+    if [[ -z "$status" ]]; then
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${arrow} ${cyan_color}${description}${color_reset}" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${sand_color}    $message${color_reset}" | tee -a $LOG_FILE
+    elif [[ $status -eq 0 ]]; then
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} ${description/present/past}" | tee -a $LOG_FILE
     else
-        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${arrow} ${cyan_color}${description}${color_reset}" | tee -a $LOG_FILE
-        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${sand_color}    $message${color_reset}" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${red_cross} Error: $status - ${description}. See 'journalctl -xe' for details." | tee -a $LOG_FILE
         echo "Press Enter to return to the menu..."
         read
@@ -269,7 +268,7 @@ enable_disable_root_login() {
     local user_config_file=$(get_user_config_file)
     if [[ ! -f $user_config_file ]]; then
         touch $user_config_file
-        log "touch $user_config_file" 0 "Creating SSH user configuration file"
+        log "touch $user_config_file" "" "Creating SSH user configuration file"
     fi
     if grep -q "^PermitRootLogin yes" $user_config_file; then
         run_command "sed -i '/^PermitRootLogin /d' $user_config_file" "Disabling root login"
@@ -289,7 +288,7 @@ change_ssh_port() {
     local user_config_file=$(get_user_config_file)
     if [[ ! -f $user_config_file ]]; then
         touch $user_config_file
-        log "touch $user_config_file" 0 "Creating SSH user configuration file"
+        log "touch $user_config_file" "" "Creating SSH user configuration file"
     fi
     read -p "Enter the new SSH port: " ssh_port
     run_command "sed -i '/^Port /d' $user_config_file" "Changing SSH port"
@@ -304,7 +303,7 @@ set_ssh_protocol() {
     local user_config_file=$(get_user_config_file)
     if [[ ! -f $user_config_file ]]; then
         touch $user_config_file
-        log "touch $user_config_file" 0 "Creating SSH user configuration file"
+        log "touch $user_config_file" "" "Creating SSH user configuration file"
     fi
     run_command "sed -i '/^Protocol /d' $user_config_file" "Setting SSH protocol"
     echo "Protocol 2" >> $user_config_file
@@ -318,7 +317,7 @@ enable_disable_password_login() {
     local user_config_file=$(get_user_config_file)
     if [[ ! -f $user_config_file ]]; then
         touch $user_config_file
-        log "touch $user_config_file" 0 "Creating SSH user configuration file"
+        log "touch $user_config_file" "" "Creating SSH user configuration file"
     fi
     if grep -q "^PasswordAuthentication yes" $user_config_file; then
         run_command "sed -i '/^PasswordAuthentication /d' $user_config_file" "Disabling password login"
