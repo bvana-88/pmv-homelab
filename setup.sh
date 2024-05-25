@@ -53,7 +53,7 @@ update_system() {
     log "Updating the system..."
     apt update && apt upgrade -y
     log "System updated."
-    return_to_ssh_menu
+    return_to_main_menu
 }
 
 # Function to ensure SSH config file exists
@@ -125,7 +125,7 @@ ssh_menu() {
     display_ssh_settings
     echo
     echo "Select an option:"
-    echo "1) Update System - Ensures your system is up to date with the latest security patches and software."
+    echo "1) View Config - Displays the current SSH configuration and file location."
     echo "2) Enable/Disable SSH - Allows remote login to your server. It's essential for remote management."
     if systemctl is-active --quiet ssh; then
         echo "3) Enable/Disable Root Login - Allows or disallows root user to login via SSH. Disabling root login enhances security."
@@ -138,7 +138,7 @@ ssh_menu() {
 
     case $ssh_choice in
         1)
-            update_system
+            view_ssh_config
         ;;
         2)
             enable_disable_ssh
@@ -179,6 +179,23 @@ ssh_menu() {
             return_to_ssh_menu
         ;;
     esac
+}
+
+# Function to view SSH config
+view_ssh_config() {
+    ensure_ssh_config_file
+    clear
+    echo "##############################################"
+    echo "#                                            #"
+    echo "#             SSH Configuration              #"
+    echo "#                                            #"
+    echo "##############################################"
+    echo
+    echo "Configuration file location: $USER_CONFIG_FILE"
+    echo
+    cat $USER_CONFIG_FILE
+    echo
+    return_to_ssh_menu
 }
 
 # Function to enable/disable SSH
@@ -481,7 +498,8 @@ main_menu() {
     echo "1) SSH setup"
     echo "2) User setup"
     echo "3) Docker"
-    echo "4) Cleanup to prepare for turning into a template"
+    echo "4) Update System"
+    echo "5) Cleanup to prepare for turning into a template"
     echo "L) View log"
     echo "x) Exit"
     read -p "Enter your choice: " choice
@@ -499,6 +517,9 @@ main_menu() {
             docker_menu
         ;;
         4)
+            update_system
+        ;;
+        5)
             cleanup
         ;;
         L|l)
