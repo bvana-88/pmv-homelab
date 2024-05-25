@@ -13,7 +13,27 @@ check_root() {
 
 # Function to log messages
 log() {
-    echo "$(date +'%Y-%m-%d %H:%M:%S') - $1" | tee -a $LOG_FILE
+    local message=$1
+    local status=$2
+    local color_reset="\e[0m"
+    local green_tick="\e[32m✓\e[0m"
+    local red_cross="\e[31m✗\e[0m"
+
+    if [[ $status -eq 0 ]]; then
+        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} $message" | tee -a $LOG_FILE
+    else
+        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${red_cross} $message" | tee -a $LOG_FILE
+        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - \e[31mError:\e[0m $status" | tee -a $LOG_FILE
+    fi
+}
+
+# Function to run commands and log their status
+run_command() {
+    local command="$1"
+    eval $command
+    local status=$?
+    log "$command" $status
+    return $status
 }
 
 # Function to return to the main menu
@@ -50,50 +70,56 @@ return_to_docker_menu() {
 
 # Function to update system
 update_system() {
-    log "Updating the system..."
-    apt update && apt upgrade -y
-    log "System updated."
+    run_command "apt update && apt upgrade -y"
     return_to_main_menu
 }
 
 # Function to ensure SSH config file exists
 ensure_ssh_config_file() {
     if [[ ! -f $USER_CONFIG_FILE ]]; then
-        touch $USER_CONFIG_FILE
-        log "Created SSH user configuration file: $USER_CONFIG_FILE"
+        run_command "touch $USER_CONFIG_FILE"
+        log "Created SSH user configuration file: $USER_CONFIG_FILE" 0
     fi
 }
 
 # Function to display current SSH settings
 display_ssh_settings() {
     ensure_ssh_config_file
-    local ssh_status root_login protocol_version password_login
+    local ssh_status root_login protocol_version password_login ssh_port
 
     if systemctl is-active --quiet ssh; then
         ssh_status="\e[32mEnabled\e[0m"
+        ssh_port=$(grep "^Port " $USER_CONFIG_FILE | awk '{print $2}')
+        ssh_port=${ssh_port:-22}
     else
         ssh_status="\e[31mDisabled\e[0m"
+        ssh_port="\e[31m-\e[0m"
+        root_login="\e[31m-\e[0m"
+        protocol_version="\e[31m-\e[0m"
+        password_login="\e[31m-\e[0m"
     fi
 
-    if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
-        root_login="\e[32mEnabled\e[0m"
-    else
-        root_login="\e[31mDisabled\e[0m"
+    if [[ $ssh_status == *"Enabled"* ]]; then
+        if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
+            root_login="\e[32mEnabled\e[0m"
+        else
+            root_login="\e[31mDisabled\e[0m"
+        fi
+
+        if grep -q "^Protocol 2" $USER_CONFIG_FILE; then
+            protocol_version="\e[32m2\e[0m"
+        else
+            protocol_version="\e[31mNot set\e[0m"
+        fi
+
+        if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
+            password_login="\e[32mEnabled\e[0m"
+        else
+            password_login="\e[31mDisabled\e[0m"
+        fi
     fi
 
-    if grep -q "^Protocol 2" $USER_CONFIG_FILE; then
-        protocol_version="\e[32m2\e[0m"
-    else
-        protocol_version="\e[31mNot set\e[0m"
-    fi
-
-    if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
-        password_login="\e[32mEnabled\e[0m"
-    else
-        password_login="\e[31mDisabled\e[0m"
-    fi
-
-    echo -e "||  SSH: $ssh_status  ||  Root Login: $root_login  ||  Protocol: $protocol_version  ||  Password Login: $password_login  ||"
+    echo -e "||  SSH: $ssh_status  ||  Port: $ssh_port  ||  Root Login: $root_login  ||  Protocol: $protocol_version  ||  Password Login: $password_login  ||"
 }
 
 # Function to display current user settings
@@ -201,13 +227,11 @@ view_ssh_config() {
 # Function to enable/disable SSH
 enable_disable_ssh() {
     if systemctl is-active --quiet ssh; then
-        log "Disabling SSH..."
-        systemctl stop ssh
-        log "SSH disabled."
+        run_command "systemctl stop ssh"
+        log "SSH disabled." 0
     else
-        log "Enabling SSH..."
-        systemctl start ssh
-        log "SSH enabled."
+        run_command "systemctl start ssh"
+        log "SSH enabled." 0
     fi
     return_to_ssh_menu
 }
@@ -216,15 +240,15 @@ enable_disable_ssh() {
 enable_disable_root_login() {
     ensure_ssh_config_file
     if grep -q "^PermitRootLogin yes" $USER_CONFIG_FILE; then
-        sed -i "/^PermitRootLogin /d" $USER_CONFIG_FILE
+        run_command "sed -i '/^PermitRootLogin /d' $USER_CONFIG_FILE"
         echo "PermitRootLogin no" >> $USER_CONFIG_FILE
-        log "Root login disabled."
+        log "Root login disabled." 0
     else
-        sed -i "/^PermitRootLogin /d" $USER_CONFIG_FILE
+        run_command "sed -i '/^PermitRootLogin /d' $USER_CONFIG_FILE"
         echo "PermitRootLogin yes" >> $USER_CONFIG_FILE
-        log "Root login enabled."
+        log "Root login enabled." 0
     fi
-    systemctl restart sshd
+    run_command "systemctl restart sshd"
     return_to_ssh_menu
 }
 
@@ -232,20 +256,20 @@ enable_disable_root_login() {
 change_ssh_port() {
     ensure_ssh_config_file
     read -p "Enter the new SSH port: " ssh_port
-    sed -i "/^Port /d" $USER_CONFIG_FILE
+    run_command "sed -i '/^Port /d' $USER_CONFIG_FILE"
     echo "Port $ssh_port" >> $USER_CONFIG_FILE
-    log "SSH port set to $ssh_port."
-    systemctl restart sshd
+    log "SSH port set to $ssh_port." 0
+    run_command "systemctl restart sshd"
     return_to_ssh_menu
 }
 
 # Function to set SSH protocol
 set_ssh_protocol() {
     ensure_ssh_config_file
-    sed -i "/^Protocol /d" $USER_CONFIG_FILE
+    run_command "sed -i '/^Protocol /d' $USER_CONFIG_FILE"
     echo "Protocol 2" >> $USER_CONFIG_FILE
-    log "SSH protocol set to 2."
-    systemctl restart sshd
+    log "SSH protocol set to 2." 0
+    run_command "systemctl restart sshd"
     return_to_ssh_menu
 }
 
@@ -253,16 +277,16 @@ set_ssh_protocol() {
 enable_disable_password_login() {
     ensure_ssh_config_file
     if grep -q "^PasswordAuthentication yes" $USER_CONFIG_FILE; then
-        sed -i "/^PasswordAuthentication /d" $USER_CONFIG_FILE
+        run_command "sed -i '/^PasswordAuthentication /d' $USER_CONFIG_FILE"
         echo "PasswordAuthentication no" >> $USER_CONFIG_FILE
         echo "PubkeyAuthentication yes" >> $USER_CONFIG_FILE
-        log "Password login disabled."
+        log "Password login disabled." 0
     else
-        sed -i "/^PasswordAuthentication /d" $USER_CONFIG_FILE
+        run_command "sed -i '/^PasswordAuthentication /d' $USER_CONFIG_FILE"
         echo "PasswordAuthentication yes" >> $USER_CONFIG_FILE
-        log "Password login enabled."
+        log "Password login enabled." 0
     fi
-    systemctl restart sshd
+    run_command "systemctl restart sshd"
     return_to_ssh_menu
 }
 
@@ -309,14 +333,14 @@ add_user() {
     read -p "Enter the new username: " username
     read -s -p "Enter the password for $username: " password
     echo
-    useradd -m -s /bin/bash $username
+    run_command "useradd -m -s /bin/bash $username"
     echo "$username:$password" | chpasswd
-    log "User $username created."
+    log "User $username created." 0
 
     read -p "Should the user be added to the sudo group? (y/n): " sudo_confirm
     if [[ "${sudo_confirm:0:1}" =~ ^[Yy]$ ]]; then
-        usermod -aG sudo $username
-        log "User $username added to sudo group."
+        run_command "usermod -aG sudo $username"
+        log "User $username added to sudo group." 0
     fi
     return_to_user_menu
 }
@@ -324,53 +348,43 @@ add_user() {
 # Function to remove a user
 remove_user() {
     read -p "Enter the username to remove: " username
-    deluser --remove-home $username
-    log "User $username removed."
+    run_command "deluser --remove-home $username"
+    log "User $username removed." 0
     return_to_user_menu
 }
 
 # Function to set nopassword for sudo group
 set_nopassword_sudo() {
-    echo "%sudo ALL=(ALL) NOPASSWD:ALL" | EDITOR='tee -a' visudo
-    log "Configured sudo group with NOPASSWD."
+    run_command "echo '%sudo ALL=(ALL) NOPASSWD:ALL' | EDITOR='tee -a' visudo"
+    log "Configured sudo group with NOPASSWD." 0
     return_to_user_menu
 }
 
 # Function to install Docker
 install_docker() {
-    log "Installing Docker..."
-    apt-get update
-    apt-get install -y \
-        apt-transport-https \
-        ca-certificates \
-        curl \
-        gnupg \
-        lsb-release
-    log "Installed packages: apt-transport-https, ca-certificates, curl, gnupg, lsb-release."
+    run_command "apt-get update"
+    run_command "apt-get install -y apt-transport-https ca-certificates curl gnupg lsb-release"
+    log "Installed packages: apt-transport-https, ca-certificates, curl, gnupg, lsb-release." 0
 
-    install -m 0755 -d /etc/apt/keyrings
-    log "Created directory /etc/apt/keyrings."
+    run_command "install -m 0755 -d /etc/apt/keyrings"
+    log "Created directory /etc/apt/keyrings." 0
 
-    curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
-    log "Downloaded and added Docker GPG key."
+    run_command "curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg"
+    log "Downloaded and added Docker GPG key." 0
 
-    echo \
-        "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
-        $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
-    log "Added Docker repository."
+    run_command "echo 'deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable' | tee /etc/apt/sources.list.d/docker.list > /dev/null"
+    log "Added Docker repository." 0
 
-    apt-get update
-    apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    log "Installed packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin."
+    run_command "apt-get update"
+    run_command "apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+    log "Installed packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin." 0
 
-    log "Docker installed."
-    log "Verifying Docker installation..."
-    docker run hello-world
-
+    log "Docker installed." 0
+    run_command "docker run hello-world"
     if [[ $? -eq 0 ]]; then
-        log "Docker was installed and verified successfully."
+        log "Docker was installed and verified successfully." 0
     else
-        log "Docker installation verification failed."
+        log "Docker installation verification failed." 1
     fi
 
     return_to_docker_menu
@@ -378,13 +392,12 @@ install_docker() {
 
 # Function to remove Docker
 remove_docker() {
-    log "Removing Docker..."
-    apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-    log "Purged packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin."
-    apt-get autoremove -y
-    log "Removed unused packages."
-    rm -rf /var/lib/docker
-    log "Removed Docker data in /var/lib/docker."
+    run_command "apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin"
+    log "Purged packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin." 0
+    run_command "apt-get autoremove -y"
+    log "Removed unused packages." 0
+    run_command "rm -rf /var/lib/docker"
+    log "Removed Docker data in /var/lib/docker." 0
 
     return_to_docker_menu
 }
@@ -392,8 +405,8 @@ remove_docker() {
 # Function to add a user to the Docker group
 add_user_to_docker_group() {
     read -p "Enter the username to add to the Docker group: " docker_user
-    usermod -aG docker $docker_user
-    log "User $docker_user added to the Docker group."
+    run_command "usermod -aG docker $docker_user"
+    log "User $docker_user added to the Docker group." 0
 
     return_to_docker_menu
 }
@@ -401,8 +414,8 @@ add_user_to_docker_group() {
 # Function to remove a user from the Docker group
 remove_user_from_docker_group() {
     read -p "Enter the username to remove from the Docker group: " docker_user
-    gpasswd -d $docker_user docker
-    log "User $docker_user removed from the Docker group."
+    run_command "gpasswd -d $docker_user docker"
+    log "User $docker_user removed from the Docker group." 0
 
     return_to_docker_menu
 }
@@ -410,7 +423,7 @@ remove_user_from_docker_group() {
 # Function to install Dockge
 install_dockge() {
     if ! command -v docker &> /dev/null || ! systemctl is-active --quiet docker; then
-        log "Docker is not installed or not running. Please install and start Docker first."
+        log "Docker is not installed or not running. Please install and start Docker first." 1
         return_to_docker_menu
         return
     fi
@@ -422,13 +435,12 @@ install_dockge() {
     read -p "Which port should Dockge use? (default 5001, press Enter for default): " dockge_port
     dockge_port=${dockge_port:-5001}
 
-    log "Installing Dockge..."
-    mkdir -p "$dockge_dir" && cd "$dockge_dir" || { log "Failed to create and navigate to $dockge_dir."; return_to_docker_menu; return; }
-    log "Created directory $dockge_dir."
-    curl "https://dockge.kuma.pet/compose.yaml?port=$dockge_port&stacksPath=$stacks_dir" --output compose.yaml || { log "Failed to download Dockge compose file."; return_to_docker_menu; return; }
-    log "Downloaded Dockge compose file."
-    docker compose up -d || { log "Failed to start Dockge with Docker Compose."; return_to_docker_menu; return; }
-    log "Dockge is running on http://$(hostname -I | awk '{print $1}'):$dockge_port"
+    run_command "mkdir -p '$dockge_dir' && cd '$dockge_dir'"
+    log "Created directory $dockge_dir." 0
+    run_command "curl 'https://dockge.kuma.pet/compose.yaml?port=$dockge_port&stacksPath=$stacks_dir' --output compose.yaml"
+    log "Downloaded Dockge compose file." 0
+    run_command "docker compose up -d"
+    log "Dockge is running on http://$(hostname -I | awk '{print $1}'):$dockge_port" 0
 
     return_to_docker_menu
 }
@@ -438,12 +450,11 @@ remove_dockge() {
     read -p "Where is Dockge installed? (default /opt/dockge, press Enter for default): " dockge_dir
     dockge_dir=${dockge_dir:-/opt/dockge}
 
-    log "Removing Dockge..."
-    cd "$dockge_dir" || { log "Failed to navigate to $dockge_dir."; return_to_docker_menu; return; }
-    docker compose down || { log "Failed to stop Dockge with Docker Compose."; return_to_docker_menu; return; }
-    log "Stopped Dockge with Docker Compose."
-    rm -rf "$dockge_dir" || { log "Failed to remove Dockge directory."; return_to_docker_menu; return; }
-    log "Removed Dockge directory $dockge_dir."
+    run_command "cd '$dockge_dir'"
+    run_command "docker compose down"
+    log "Stopped Dockge with Docker Compose." 0
+    run_command "rm -rf '$dockge_dir'"
+    log "Removed Dockge directory $dockge_dir." 0
 
     return_to_docker_menu
 }
@@ -495,10 +506,10 @@ main_menu() {
     echo "##############################################"
     echo
     echo "Select an option:"
-    echo "1) SSH setup"
-    echo "2) User setup"
-    echo "3) Docker"
-    echo "4) Update System"
+    echo "1) Update System"
+    echo "2) SSH setup"
+    echo "3) User setup"
+    echo "4) Docker"
     echo "5) Cleanup to prepare for turning into a template"
     echo "L) View log"
     echo "x) Exit"
@@ -508,16 +519,16 @@ main_menu() {
 
     case $choice in
         1)
-            ssh_menu
+            update_system
         ;;
         2)
-            user_menu
+            ssh_menu
         ;;
         3)
-            docker_menu
+            user_menu
         ;;
         4)
-            update_system
+            docker_menu
         ;;
         5)
             cleanup
@@ -526,7 +537,7 @@ main_menu() {
             view_log
         ;;
         x)
-            log "Exiting script."
+            log "Exiting script." 0
             exit 0
         ;;
         *)
