@@ -27,7 +27,7 @@ log() {
     if [[ $status -eq 0 ]]; then
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${arrow} ${cyan_color}${description}${color_reset}" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${sand_color}    $message${color_reset}" | tee -a $LOG_FILE
-        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} $description" | tee -a $LOG_FILE
+        echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${green_tick} ${description/present/past}" | tee -a $LOG_FILE
     else
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${arrow} ${cyan_color}${description}${color_reset}" | tee -a $LOG_FILE
         echo -e "$(date +'%Y-%m-%d %H:%M:%S') - ${sand_color}    $message${color_reset}" | tee -a $LOG_FILE
@@ -153,12 +153,8 @@ display_user_settings() {
 
     users=$(ls /home)
     for user in $users; do
-        if id -nG "$user" | grep -qw sudo; then
-            sudo_status="\e[32m✓\e[0m"
-        else
-            sudo_status="\e[31m✗\e[0m"
-        fi
-        user_list+="||  $user  ||  sudo: $sudo_status  ||\n"
+        user_groups=$(id -Gn $user | tr ' ' ', ')
+        user_list+="||  $user  ||  Groups: $user_groups  ||\n"
     done
 
     echo -e "$user_list"
@@ -396,6 +392,12 @@ add_user() {
 # Function to remove a user
 remove_user() {
     read -p "Enter the username to remove: " username
+    if ! command -v perl &> /dev/null; then
+        echo "The --remove-home, --remove-all-files, etc. options require the Perl package. This will be installed."
+        echo "Press Enter to continue..."
+        read
+        run_command "apt-get install -y perl" "Installing Perl package"
+    fi
     run_command "deluser --remove-home $username" "Removing user $username"
     log "deluser --remove-home $username" 0 "User $username removed"
     return_to_user_menu
