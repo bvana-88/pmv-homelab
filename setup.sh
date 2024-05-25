@@ -589,7 +589,11 @@ cleanup() {
         run_command "rm -f /home/$user/.ssh/known_hosts" "Clearing SSH known hosts for $user"
     done
 
-    run_command "rm /etc/netplan/*.yaml" "Resetting network configuration"
+    if ls /etc/netplan/*.yaml &> /dev/null; then
+        run_command "rm /etc/netplan/*.yaml" "Resetting network configuration"
+    else
+        log "No netplan configuration files found" 0 "Resetting network configuration"
+    fi
 
     run_command "apt autoremove -y" "Removing unneeded packages"
 
@@ -608,6 +612,7 @@ cleanup() {
 
     return_to_main_menu
 }
+
 
 # Main menu
 main_menu() {
