@@ -23,6 +23,22 @@ return_to_main_menu() {
     main_menu
 }
 
+# Function to return to the SSH menu
+return_to_ssh_menu() {
+    echo
+    echo "Press Enter to return to the SSH menu..."
+    read
+    ssh_menu
+}
+
+# Function to return to the User menu
+return_to_user_menu() {
+    echo
+    echo "Press Enter to return to the User menu..."
+    read
+    user_menu
+}
+
 # Function to return to the Docker menu
 return_to_docker_menu() {
     echo
@@ -31,72 +47,262 @@ return_to_docker_menu() {
     docker_menu
 }
 
-# Function to perform SSH & User setup
-ssh_user_setup() {
-    log "SSH & User Setup"
-    echo "SSH & User Setup"
+# Function to update system
+update_system() {
+    log "Updating the system..."
+    apt update && apt upgrade -y
+    log "System updated."
+    return_to_ssh_menu
+}
 
-    read -p "Do you want to update the system? (y/n): " update_confirm
-    if [[ "${update_confirm:0:1}" =~ ^[Yy]$ ]]; then
-        log "Updating the system..."
-        apt update && apt upgrade -y
-        log "System updated."
+# Function to display current SSH settings
+display_ssh_settings() {
+    local ssh_status root_login protocol_version password_login
+
+    if systemctl is-active --quiet ssh; then
+        ssh_status="\e[32mEnabled\e[0m"
+    else
+        ssh_status="\e[31mDisabled\e[0m"
     fi
 
-    read -p "Do you want to create a new user and add it to the sudo group? (y/n): " create_user_confirm
-    if [[ "${create_user_confirm:0:1}" =~ ^[Yy]$ ]]; then
-        read -p "Enter the new username: " username
-        read -s -p "Enter the password for $username: " password
-        echo
-        useradd -m -s /bin/bash -G sudo $username
-        echo "$username:$password" | chpasswd
-        log "User $username created and added to sudo group."
+    if grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+        root_login="\e[32mEnabled\e[0m"
+    else
+        root_login="\e[31mDisabled\e[0m"
+    fi
 
-        read -p "Do you want to add a public key for $username? (y/n): " add_key_confirm
-        if [[ "${add_key_confirm:0:1}" =~ ^[Yy]$ ]]; then
-            read -p "Enter the public key for $username: " public_key
-            mkdir -p /home/$username/.ssh
-            echo "$public_key" > /home/$username/.ssh/authorized_keys
-            chown -R $username:$username /home/$username/.ssh
-            chmod 700 /home/$username/.ssh
-            chmod 600 /home/$username/.ssh/authorized_keys
-            log "Public key added for $username."
+    if grep -q "^Protocol 2" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+        protocol_version="\e[32m2\e[0m"
+    else
+        protocol_version="\e[31mNot set\e[0m"
+    fi
+
+    if grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+        password_login="\e[32mEnabled\e[0m"
+    else
+        password_login="\e[31mDisabled\e[0m"
+    fi
+
+    echo -e "||  SSH: $ssh_status  ||  Root Login: $root_login  ||  Protocol: $protocol_version  ||  Password Login: $password_login  ||"
+}
+
+# Function to display current user settings
+display_user_settings() {
+    local user_list users
+
+    users=$(ls /home)
+    for user in $users; do
+        if id -nG "$user" | grep -qw sudo; then
+            sudo_status="\e[32m✓\e[0m"
+        else
+            sudo_status="\e[31m✗\e[0m"
         fi
-    fi
+        user_list+="||  $user  ||  sudo: $sudo_status  ||\n"
+    done
 
-    read -p "Do you want to change the SSH port? (y/n): " change_port_confirm
-    if [[ "${change_port_confirm:0:1}" =~ ^[Yy]$ ]]; then
-        read -p "Enter the new SSH port: " ssh_port
-        echo "Port $ssh_port" >> /etc/ssh/sshd_config.d/00-userconfig.conf
-        log "SSH port set to $ssh_port."
-    fi
+    echo -e "$user_list"
+}
 
-    read -p "Do you want to disable PermitRootLogin? (y/n): " disable_root_confirm
-    if [[ "${disable_root_confirm:0:1}" =~ ^[Yy]$ ]]; then
+# SSH setup menu
+ssh_menu() {
+    clear
+    echo "##############################################"
+    echo "#                                            #"
+    echo "#                SSH Menu                    #"
+    echo "#                                            #"
+    echo "##############################################"
+    echo
+    display_ssh_settings
+    echo
+    echo "Select an option:"
+    echo "1) Update System - Ensures your system is up to date with the latest security patches and software."
+    echo "2) Enable/Disable SSH - Allows remote login to your server. It's essential for remote management."
+    if systemctl is-active --quiet ssh; then
+        echo "3) Enable/Disable Root Login - Allows or disallows root user to login via SSH. Disabling root login enhances security."
+        echo "4) Change SSH Port - Changes the default SSH port from 22 to another port to avoid common attacks."
+        echo "5) Set Protocol to 2 - Ensures SSH uses protocol version 2, which is more secure."
+        echo "6) Enable/Disable Password Login - Allows or disallows password-based login. Disabling it and using keys increases security."
+    fi
+    echo "b) Back to main menu"
+    read -p "Enter your choice: " ssh_choice
+
+    case $ssh_choice in
+        1)
+            update_system
+        ;;
+        2)
+            enable_disable_ssh
+        ;;
+        3)
+            if systemctl is-active --quiet ssh; then
+                enable_disable_root_login
+            else
+                ssh_menu
+            fi
+        ;;
+        4)
+            if systemctl is-active --quiet ssh; then
+                change_ssh_port
+            else
+                ssh_menu
+            fi
+        ;;
+        5)
+            if systemctl is-active --quiet ssh; then
+                set_ssh_protocol
+            else
+                ssh_menu
+            fi
+        ;;
+        6)
+            if systemctl is-active --quiet ssh; then
+                enable_disable_password_login
+            else
+                ssh_menu
+            fi
+        ;;
+        b)
+            main_menu
+        ;;
+        *)
+            echo "Invalid choice."
+            return_to_ssh_menu
+        ;;
+    esac
+}
+
+# Function to enable/disable SSH
+enable_disable_ssh() {
+    if systemctl is-active --quiet ssh; then
+        log "Disabling SSH..."
+        systemctl stop ssh
+        log "SSH disabled."
+    else
+        log "Enabling SSH..."
+        systemctl start ssh
+        log "SSH enabled."
+    fi
+    return_to_ssh_menu
+}
+
+# Function to enable/disable root login
+enable_disable_root_login() {
+    if grep -q "^PermitRootLogin yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+        sed -i "/^PermitRootLogin /d" /etc/ssh/sshd_config.d/00-userconfig.conf
         echo "PermitRootLogin no" >> /etc/ssh/sshd_config.d/00-userconfig.conf
-        log "PermitRootLogin disabled."
+        log "Root login disabled."
+    else
+        sed -i "/^PermitRootLogin /d" /etc/ssh/sshd_config.d/00-userconfig.conf
+        echo "PermitRootLogin yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        log "Root login enabled."
     fi
+    systemctl restart sshd
+    return_to_ssh_menu
+}
 
+# Function to change SSH port
+change_ssh_port() {
+    read -p "Enter the new SSH port: " ssh_port
+    sed -i "/^Port /d" /etc/ssh/sshd_config.d/00-userconfig.conf
+    echo "Port $ssh_port" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+    log "SSH port set to $ssh_port."
+    systemctl restart sshd
+    return_to_ssh_menu
+}
+
+# Function to set SSH protocol
+set_ssh_protocol() {
+    sed -i "/^Protocol /d" /etc/ssh/sshd_config.d/00-userconfig.conf
     echo "Protocol 2" >> /etc/ssh/sshd_config.d/00-userconfig.conf
     log "SSH protocol set to 2."
-
-    if [[ "${add_key_confirm:0:1}" =~ ^[Yy]$ ]]; then
-        read -p "Do you want to disable password authentication? (y/n): " disable_pass_auth_confirm
-        if [[ "${disable_pass_auth_confirm:0:1}" =~ ^[Yy]$ ]]; then
-            echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/00-userconfig.conf
-            echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
-            log "Password authentication disabled."
-        fi
-    fi
-
-    log "Generating new SSH host keys..."
-    ssh-keygen -A
-    log "New SSH host keys generated."
-
     systemctl restart sshd
-    log "SSH service restarted with new configuration."
+    return_to_ssh_menu
+}
 
-    return_to_main_menu
+# Function to enable/disable password login
+enable_disable_password_login() {
+    if grep -q "^PasswordAuthentication yes" /etc/ssh/sshd_config.d/00-userconfig.conf; then
+        sed -i "/^PasswordAuthentication /d" /etc/ssh/sshd_config.d/00-userconfig.conf
+        echo "PasswordAuthentication no" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        echo "PubkeyAuthentication yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        log "Password login disabled."
+    else
+        sed -i "/^PasswordAuthentication /d" /etc/ssh/sshd_config.d/00-userconfig.conf
+        echo "PasswordAuthentication yes" >> /etc/ssh/sshd_config.d/00-userconfig.conf
+        log "Password login enabled."
+    fi
+    systemctl restart sshd
+    return_to_ssh_menu
+}
+
+# User setup menu
+user_menu() {
+    clear
+    echo "##############################################"
+    echo "#                                            #"
+    echo "#                User Menu                   #"
+    echo "#                                            #"
+    echo "##############################################"
+    echo
+    display_user_settings
+    echo
+    echo "Select an option:"
+    echo "1) Add User - Creates a new user account."
+    echo "2) Remove User - Removes an existing user account."
+    echo "3) Sudo: Set Nopassword - Configures sudo group to not require a password."
+    echo "b) Back to main menu"
+    read -p "Enter your choice: " user_choice
+
+    case $user_choice in
+        1)
+            add_user
+        ;;
+        2)
+            remove_user
+        ;;
+        3)
+            set_nopassword_sudo
+        ;;
+        b)
+            main_menu
+        ;;
+        *)
+            echo "Invalid choice."
+            return_to_user_menu
+        ;;
+    esac
+}
+
+# Function to add a user
+add_user() {
+    read -p "Enter the new username: " username
+    read -s -p "Enter the password for $username: " password
+    echo
+    useradd -m -s /bin/bash $username
+    echo "$username:$password" | chpasswd
+    log "User $username created."
+
+    read -p "Should the user be added to the sudo group? (y/n): " sudo_confirm
+    if [[ "${sudo_confirm:0:1}" =~ ^[Yy]$ ]]; then
+        usermod -aG sudo $username
+        log "User $username added to sudo group."
+    fi
+    return_to_user_menu
+}
+
+# Function to remove a user
+remove_user() {
+    read -p "Enter the username to remove: " username
+    deluser --remove-home $username
+    log "User $username removed."
+    return_to_user_menu
+}
+
+# Function to set nopassword for sudo group
+set_nopassword_sudo() {
+    echo "%sudo ALL=(ALL) NOPASSWD:ALL" | EDITOR='tee -a' visudo
+    log "Configured sudo group with NOPASSWD."
+    return_to_user_menu
 }
 
 # Function to install Docker
@@ -109,17 +315,22 @@ install_docker() {
         curl \
         gnupg \
         lsb-release
+    log "Installed packages: apt-transport-https, ca-certificates, curl, gnupg, lsb-release."
 
     install -m 0755 -d /etc/apt/keyrings
+    log "Created directory /etc/apt/keyrings."
 
     curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg
+    log "Downloaded and added Docker GPG key."
 
     echo \
         "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu \
         $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
+    log "Added Docker repository."
 
     apt-get update
     apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    log "Installed packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin."
 
     log "Docker installed."
     log "Verifying Docker installation..."
@@ -138,9 +349,11 @@ install_docker() {
 remove_docker() {
     log "Removing Docker..."
     apt-get purge -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
+    log "Purged packages: docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin."
     apt-get autoremove -y
+    log "Removed unused packages."
     rm -rf /var/lib/docker
-    log "Docker removed."
+    log "Removed Docker data in /var/lib/docker."
 
     return_to_docker_menu
 }
@@ -180,9 +393,10 @@ install_dockge() {
 
     log "Installing Dockge..."
     mkdir -p "$dockge_dir" && cd "$dockge_dir" || { log "Failed to create and navigate to $dockge_dir."; return_to_docker_menu; return; }
+    log "Created directory $dockge_dir."
     curl "https://dockge.kuma.pet/compose.yaml?port=$dockge_port&stacksPath=$stacks_dir" --output compose.yaml || { log "Failed to download Dockge compose file."; return_to_docker_menu; return; }
+    log "Downloaded Dockge compose file."
     docker compose up -d || { log "Failed to start Dockge with Docker Compose."; return_to_docker_menu; return; }
-
     log "Dockge is running on http://$(hostname -I | awk '{print $1}'):$dockge_port"
 
     return_to_docker_menu
@@ -196,9 +410,9 @@ remove_dockge() {
     log "Removing Dockge..."
     cd "$dockge_dir" || { log "Failed to navigate to $dockge_dir."; return_to_docker_menu; return; }
     docker compose down || { log "Failed to stop Dockge with Docker Compose."; return_to_docker_menu; return; }
+    log "Stopped Dockge with Docker Compose."
     rm -rf "$dockge_dir" || { log "Failed to remove Dockge directory."; return_to_docker_menu; return; }
-
-    log "Dockge removed."
+    log "Removed Dockge directory $dockge_dir."
 
     return_to_docker_menu
 }
@@ -232,7 +446,7 @@ view_log() {
     echo "#                                            #"
     echo "##############################################"
     echo
-    tail -n 100  $LOG_FILE
+    tail -n 100 $LOG_FILE
     return_to_main_menu
 }
 
@@ -246,9 +460,10 @@ main_menu() {
     echo "##############################################"
     echo
     echo "Select an option:"
-    echo "1) SSH & User setup"
-    echo "2) Docker"
-    echo "3) Cleanup to prepare for turning into a template"
+    echo "1) SSH setup"
+    echo "2) User setup"
+    echo "3) Docker"
+    echo "4) Cleanup to prepare for turning into a template"
     echo "L) View log"
     echo "x) Exit"
     read -p "Enter your choice: " choice
@@ -257,12 +472,15 @@ main_menu() {
 
     case $choice in
         1)
-            ssh_user_setup
+            ssh_menu
         ;;
         2)
-            docker_menu
+            user_menu
         ;;
         3)
+            docker_menu
+        ;;
+        4)
             cleanup
         ;;
         L|l)
